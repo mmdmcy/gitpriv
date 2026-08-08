@@ -1,0 +1,6 @@
+# build artifacts
+/gitpriv
+build/
+
+# personal
+me.md
