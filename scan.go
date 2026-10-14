@@ -75,7 +75,8 @@ func isSkipped(rel string, skip []string) bool {
 	return false
 }
 
-func collect(repoDir string, skip []string) ([]string, error) {	entries, err := ignoredEntries(repoDir)
+func collect(repoDir string, skip []string) ([]string, error) {
+	entries, err := ignoredEntries(repoDir)
 	if err != nil {
 		return nil, err
 	}
