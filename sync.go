@@ -26,11 +26,11 @@ func cmdScan(args []string) error {
 	}
 	problems := 0
 	for _, repo := range repos {
-		res, err := collect(repo, cfg.Rules())
+		res, err := collect(repo.Root, cfg.Rules())
 		if err != nil {
 			return err
 		}
-		printScan(os.Stdout, repoKey(repo), res)
+		printScan(os.Stdout, repo.Key, res)
 		problems += len(res.Errs)
 	}
 	if problems > 0 {
@@ -49,7 +49,7 @@ func cmdPush(args []string) error {
 		return err
 	}
 	for _, repo := range repos {
-		res, err := collect(repo, cfg.Rules())
+		res, err := collect(repo.Root, cfg.Rules())
 		if err != nil {
 			return err
 		}
@@ -63,15 +63,18 @@ func cmdPush(args []string) error {
 		for _, f := range res.Files {
 			files = append(files, f.Rel)
 		}
-		name := repoKey(repo)
+		name := repo.Key
 		if len(files) == 0 {
 			fmt.Printf("%s: nothing to sync\n", name)
 			continue
 		}
 		fmt.Printf("%s: %d file(s)\n", name, len(files))
-		staging := filepath.Join(cfg.Store, name)
+		staging, legacy := storeDir(cfg.Store, repo)
+		if legacy {
+			fmt.Printf("%s: using legacy store dir %s\n", name, repo.LegacyKey)
+		}
 		for _, f := range files {
-			src := filepath.Join(repo, filepath.FromSlash(f))
+			src := filepath.Join(repo.Root, filepath.FromSlash(f))
 			dst := filepath.Join(staging, filepath.FromSlash(f))
 			if err := copyFile(src, dst); err != nil {
 				return fmt.Errorf("%s: %w", f, err)
@@ -96,8 +99,11 @@ func cmdPull(args []string) error {
 		return err
 	}
 	for _, repo := range repos {
-		name := repoKey(repo)
-		stage := filepath.Join(cfg.Store, name)
+		name := repo.Key
+		stage, legacy := storeDir(cfg.Store, repo)
+		if legacy {
+			fmt.Printf("%s: reading legacy store dir %s\n", name, repo.LegacyKey)
+		}
 		info, err := os.Stat(stage)
 		if err != nil || !info.IsDir() {
 			fmt.Printf("%s: nothing in store\n", name)
@@ -112,7 +118,7 @@ func cmdPull(args []string) error {
 			if err != nil {
 				return nil
 			}
-			dst := filepath.Join(repo, rel)
+			dst := filepath.Join(repo.Root, rel)
 			if _, err := os.Stat(dst); err == nil {
 				skipped++
 				return nil
@@ -127,24 +133,6 @@ func cmdPull(args []string) error {
 		fmt.Printf("%s: restored %d, skipped %d (already present)\n", name, restored, skipped)
 	}
 	return nil
-}
-
-func resolveRepos(args []string) ([]string, error) {
-	if len(args) == 0 {
-		args = []string{"."}
-	}
-	var repos []string
-	for _, a := range args {
-		abs, err := filepath.Abs(a)
-		if err != nil {
-			return nil, err
-		}
-		if _, err := os.Stat(abs); err != nil {
-			return nil, err
-		}
-		repos = append(repos, abs)
-	}
-	return repos, nil
 }
 
 func gitCommit(store, msg string) error {
@@ -164,22 +152,6 @@ func gitCommit(store, msg string) error {
 		}
 	}
 	return nil
-}
-
-func repoKey(repoDir string) string {
-	out, err := exec.Command("git", "-C", repoDir, "config", "--get", "remote.origin.url").Output()
-	if err == nil {
-		u := strings.TrimSpace(string(out))
-		for _, p := range []string{"https://", "http://", "ssh://", "git@", "file://"} {
-			u = strings.TrimPrefix(u, p)
-		}
-		u = strings.TrimSuffix(u, ".git")
-		u = strings.NewReplacer(":", "-", "/", "-", "@", "-").Replace(u)
-		if u != "" {
-			return u
-		}
-	}
-	return filepath.Base(repoDir)
 }
 
 func copyFile(src, dst string) error {
