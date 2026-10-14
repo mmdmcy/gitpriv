@@ -59,6 +59,9 @@ func read(t *testing.T, path string) string {
 	return string(b)
 }
 
+// squash collapses runs of whitespace so tests don't depend on alignment.
+func squash(s string) string { return strings.Join(strings.Fields(s), " ") }
+
 func exists(path string) bool {
 	_, err := os.Lstat(path)
 	return err == nil
@@ -298,7 +301,7 @@ func TestPushPullRoundTrip(t *testing.T) {
 	if exists(filepath.Join(b, "sub/.env.local")) {
 		t.Fatal("dry-run pull restored a file")
 	}
-	if n != 1 || !strings.Contains(buf.String(), "would restore sub/.env.local") {
+	if n != 1 || !strings.Contains(squash(buf.String()), "would restore sub/.env.local") {
 		t.Errorf("dry-run pull: n=%d\n%s", n, buf.String())
 	}
 
@@ -316,8 +319,8 @@ func TestPushPullRoundTrip(t *testing.T) {
 	if exists(filepath.Join(b, "local.txt")) {
 		t.Error("pull restored a file the target repo does not ignore")
 	}
-	out := buf.String()
-	if n != 1 || !strings.Contains(out, "differs  .env") || !strings.Contains(out, "refused  local.txt") {
+	out := squash(buf.String())
+	if n != 1 || !strings.Contains(out, "differs .env") || !strings.Contains(out, "refused local.txt") {
 		t.Errorf("pull: n=%d\n%s", n, out)
 	}
 }

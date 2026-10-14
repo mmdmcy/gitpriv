@@ -98,10 +98,10 @@ func scanRepo(cfg *Config, r Repo, _ Opts, w io.Writer) (int, error) {
 	fmt.Fprintf(w, "%s (%s): %d file(s) to sync (%s), %d skipped, %d other ignored entries\n",
 		r.Key, r.Root, len(res.Files), human(total), len(res.Skipped), res.Other)
 	for _, f := range res.Files {
-		fmt.Fprintf(w, "  sync     %s (%s)\n", f.Rel, human(f.Size))
+		fmt.Fprintf(w, "  %-13s %s (%s)\n", "sync", f.Rel, human(f.Size))
 	}
 	for _, s := range res.Skipped {
-		fmt.Fprintf(w, "  skipped  %s: %s\n", s.Rel, s.Reason)
+		fmt.Fprintf(w, "  %-13s %s: %s\n", "skipped", s.Rel, s.Reason)
 	}
 	printErrs(w, res.Errs)
 	return len(res.Errs), nil
@@ -109,7 +109,7 @@ func scanRepo(cfg *Config, r Repo, _ Opts, w io.Writer) (int, error) {
 
 func printErrs(w io.Writer, errs []error) {
 	for _, e := range errs {
-		fmt.Fprintf(w, "  error    %v\n", e)
+		fmt.Fprintf(w, "  %-13s %v\n", "error", e)
 	}
 }
 
@@ -163,12 +163,12 @@ func pushRepo(cfg *Config, r Repo, o Opts, w io.Writer) (int, error) {
 			if st, ok := times[f.Rel]; ok && !o.Force {
 				if info, err := os.Stat(src); err == nil && st.After(info.ModTime()) {
 					conflicts++
-					fmt.Fprintf(w, "  conflict %s: store copy is newer than the local file (pull/status first, or push --force)\n", f.Rel)
+					fmt.Fprintf(w, "  %-13s %s: store copy is newer than the local file (pull/status first, or push --force)\n", "conflict", f.Rel)
 					continue
 				}
 			}
 		}
-		fmt.Fprintf(w, "  %s%-6s %s\n", would, action, f.Rel)
+		fmt.Fprintf(w, "  %-13s %s\n", would+action, f.Rel)
 		if action == "add" {
 			added++
 		} else {
@@ -180,7 +180,11 @@ func pushRepo(cfg *Config, r Repo, o Opts, w io.Writer) (int, error) {
 			}
 		}
 	}
-	fmt.Fprintf(w, "%s: %s%d added, %d updated, %d unchanged", r.Key, would, added, updated, same)
+	if dry {
+		fmt.Fprintf(w, "%s: dry run: %d to add, %d to update, %d unchanged", r.Key, added, updated, same)
+	} else {
+		fmt.Fprintf(w, "%s: %d added, %d updated, %d unchanged", r.Key, added, updated, same)
+	}
 	if conflicts > 0 {
 		fmt.Fprintf(w, ", %d conflict(s) not pushed", conflicts)
 	}
@@ -221,7 +225,7 @@ func pullRepo(cfg *Config, r Repo, o Opts, w io.Writer) (int, error) {
 			eq, err := sameContent(filepath.Join(dir, filepath.FromSlash(rel)), dst)
 			if err != nil || !eq {
 				differs++
-				fmt.Fprintf(w, "  differs  %s (local copy kept)\n", rel)
+				fmt.Fprintf(w, "  %-13s %s (local copy kept)\n", "differs", rel)
 				continue
 			}
 			present++
@@ -239,15 +243,15 @@ func pullRepo(cfg *Config, r Repo, o Opts, w io.Writer) (int, error) {
 	for _, rel := range missing {
 		if !ignored[rel] {
 			refused++
-			fmt.Fprintf(w, "  refused  %s: not git-ignored in this repo, restoring it could get it committed\n", rel)
+			fmt.Fprintf(w, "  %-13s %s: not git-ignored in this repo, restoring it could get it committed\n", "refused", rel)
 			continue
 		}
 		if err := safeParent(r.Root, rel); err != nil {
 			refused++
-			fmt.Fprintf(w, "  refused  %s: %v\n", rel, err)
+			fmt.Fprintf(w, "  %-13s %s: %v\n", "refused", rel, err)
 			continue
 		}
-		fmt.Fprintf(w, "  %srestore %s\n", would, rel)
+		fmt.Fprintf(w, "  %-13s %s\n", would+"restore", rel)
 		restored++
 		if !dry {
 			if err := copyFileNoClobber(filepath.Join(dir, filepath.FromSlash(rel)), filepath.Join(r.Root, filepath.FromSlash(rel))); err != nil {
@@ -255,8 +259,12 @@ func pullRepo(cfg *Config, r Repo, o Opts, w io.Writer) (int, error) {
 			}
 		}
 	}
-	fmt.Fprintf(w, "%s: %srestore %d, %d already present, %d differ (kept), %d refused\n",
-		r.Key, would, restored, present, differs, refused)
+	verb := "restored"
+	if dry {
+		verb = "dry run: to restore"
+	}
+	fmt.Fprintf(w, "%s: %s %d, %d already present, %d differ (kept local), %d refused\n",
+		r.Key, verb, restored, present, differs, refused)
 	return problems + refused, nil
 }
 
