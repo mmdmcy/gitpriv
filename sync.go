@@ -10,17 +10,13 @@ import (
 	"time"
 )
 
-func checkStore(cfg *Config) error {
-	cmd := exec.Command("git", "-C", cfg.Store, "rev-parse", "--is-inside-work-tree")
-	out, err := cmd.Output()
-	if err != nil || strings.TrimSpace(string(out)) != "true" {
-		return fmt.Errorf("store %s is not a git work tree (clone or git init it first)", cfg.Store)
-	}
-	return nil
+func gitOutput(dir string, args ...string) (string, error) {
+	out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).Output()
+	return string(out), err
 }
 
 func cmdScan(args []string) error {
-	cfg, err := loadConfig()
+	cfg, err := loadConfig(false)
 	if err != nil {
 		return err
 	}
@@ -28,30 +24,24 @@ func cmdScan(args []string) error {
 	if err != nil {
 		return err
 	}
+	problems := 0
 	for _, repo := range repos {
-		files, err := collect(repo, cfg.Skip)
+		res, err := collect(repo, cfg.Rules())
 		if err != nil {
 			return err
 		}
-		name := repoKey(repo)
-		if len(files) == 0 {
-			fmt.Printf("%s: nothing to sync\n", name)
-			continue
-		}
-		fmt.Printf("%s: %d file(s)\n", name, len(files))
-		for _, f := range files {
-			fmt.Printf("  %s\n", f)
-		}
+		printScan(os.Stdout, repoKey(repo), res)
+		problems += len(res.Errs)
+	}
+	if problems > 0 {
+		return fmt.Errorf("%d error(s) while scanning", problems)
 	}
 	return nil
 }
 
 func cmdPush(args []string) error {
-	cfg, err := loadConfig()
+	cfg, err := loadConfig(true)
 	if err != nil {
-		return err
-	}
-	if err := checkStore(cfg); err != nil {
 		return err
 	}
 	repos, err := resolveRepos(args)
@@ -59,9 +49,19 @@ func cmdPush(args []string) error {
 		return err
 	}
 	for _, repo := range repos {
-		files, err := collect(repo, cfg.Skip)
+		res, err := collect(repo, cfg.Rules())
 		if err != nil {
 			return err
+		}
+		if len(res.Errs) > 0 {
+			for _, e := range res.Errs {
+				fmt.Fprintln(os.Stderr, "gitpriv:", e)
+			}
+			return fmt.Errorf("refusing to push %s: scan had errors", repo)
+		}
+		var files []string
+		for _, f := range res.Files {
+			files = append(files, f.Rel)
 		}
 		name := repoKey(repo)
 		if len(files) == 0 {
@@ -87,7 +87,7 @@ func cmdPush(args []string) error {
 }
 
 func cmdPull(args []string) error {
-	cfg, err := loadConfig()
+	cfg, err := loadConfig(true)
 	if err != nil {
 		return err
 	}
@@ -200,4 +200,22 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	return out.Close()
+}
+
+func printScan(w io.Writer, name string, res *ScanResult) {
+	var total int64
+	for _, f := range res.Files {
+		total += f.Size
+	}
+	fmt.Fprintf(w, "%s: %d file(s) to sync (%s), %d skipped, %d other ignored entries\n",
+		name, len(res.Files), human(total), len(res.Skipped), res.Other)
+	for _, f := range res.Files {
+		fmt.Fprintf(w, "  sync  %s (%s)\n", f.Rel, human(f.Size))
+	}
+	for _, s := range res.Skipped {
+		fmt.Fprintf(w, "  skip  %s: %s\n", s.Rel, s.Reason)
+	}
+	for _, e := range res.Errs {
+		fmt.Fprintf(w, "  error %v\n", e)
+	}
 }
