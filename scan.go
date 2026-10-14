@@ -105,7 +105,9 @@ func dirSkipped(rel string, skip []string) bool {
 
 // ignoredEntries lists git-ignored paths. Fully ignored directories are
 // returned once with a trailing "/" so junk like node_modules can be pruned
-// without listing every file in it.
+// without listing every file in it. Note: with --directory git also lists
+// untracked directories that merely *contain* ignored files; collect
+// filters those out with check-ignore.
 func ignoredEntries(repoDir string) ([]string, error) {
 	cmd := exec.Command("git", "-C", repoDir, "ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory")
 	var stderr bytes.Buffer
@@ -128,6 +130,16 @@ func ignoredEntries(repoDir string) ([]string, error) {
 // regular file (symlinks are never followed) no larger than the size cap.
 func collect(repoDir string, rules Rules) (*ScanResult, error) {
 	entries, err := ignoredEntries(repoDir)
+	if err != nil {
+		return nil, err
+	}
+	var dirs []string
+	for _, e := range entries {
+		if strings.HasSuffix(e, "/") {
+			dirs = append(dirs, e)
+		}
+	}
+	ignoredDirs, err := checkIgnored(repoDir, dirs)
 	if err != nil {
 		return nil, err
 	}
@@ -163,6 +175,9 @@ func collect(repoDir string, rules Rules) (*ScanResult, error) {
 			}
 			consider(rel, info)
 			continue
+		}
+		if !ignoredDirs[e] {
+			continue // not ignored itself; its ignored files are listed separately
 		}
 		if dirSkipped(rel, rules.Skip) {
 			res.Other++
