@@ -1,4 +1,5 @@
-// gitpriv syncs gitignored private files of repos into a private store.
+// gitpriv syncs the private, git-ignored files of repos (.env files, keys,
+// local databases) between machines through a private git "store".
 package main
 
 import (
@@ -7,18 +8,24 @@ import (
 )
 
 func usage() {
-	fmt.Fprintln(os.Stderr, `gitpriv - sync private (gitignored) files between your machines
+	fmt.Fprintln(os.Stderr, `gitpriv - sync private (git-ignored) files between your machines
 
 Usage:
-  gitpriv init --store <path>       create config at ~/.config/gitpriv/config.json
-  gitpriv scan [repo-dir...]        list what would be synced (default: cwd)
-  gitpriv push [repo-dir...]        copy gitignored files into the store and commit
-  gitpriv pull [repo-dir...]        restore store files that are missing locally
+  gitpriv init --store <path>          write ~/.config/gitpriv/config.json
+  gitpriv scan   [repo...]             list what would be synced and what is skipped
+  gitpriv status [repo...]             compare local private files with the store
+  gitpriv push   [-n] [--force] [repo...]
+                                       copy private files into the store and commit
+  gitpriv pull   [-n] [repo...]        restore store files that are missing locally
 
-The store is a normal git repository (local clone or bare). Clone it to each
-machine and point the config at it. Only files ignored by the repo's own git
-rules are synced, and junk (node_modules, build/, caches, logs) is filtered
-out via the skip list.`)
+repo defaults to the current directory; any path inside a repo works.
+-n/--dry-run prints exactly what would change and changes nothing.
+
+A file is synced only if it is git-ignored AND matches an include pattern
+(.env*, keys, certs, secrets/, local databases ...) AND matches no skip
+pattern AND is a regular file under max_file_bytes (default 5 MiB).
+pull never overwrites an existing file and refuses to restore a file that
+the target repo does not ignore. Set GITPRIV_CONFIG to use another config.`)
 }
 
 func main() {
@@ -35,6 +42,8 @@ func main() {
 		err = cmdInit(args)
 	case "scan":
 		err = cmdScan(args)
+	case "status", "st":
+		err = cmdStatus(args)
 	case "push":
 		err = cmdPush(args)
 	case "pull":
