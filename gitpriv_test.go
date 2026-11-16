@@ -446,7 +446,7 @@ func TestInitDoesNotFreezeDefaults(t *testing.T) {
 		t.Fatalf("config after init = %+v", got)
 	}
 	rules := got.Rules()
-	if len(rules.Skip) != len(defaultSkip)+1 || len(rules.Include) != len(defaultInclude) {
+	if len(rules.Skip) != len(defaultSkip)+len(defaultSkipIgnored)+1 || len(rules.Include) != len(defaultInclude) {
 		t.Errorf("rules not merged: %+v", rules)
 	}
 }

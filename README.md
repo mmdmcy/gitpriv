@@ -40,6 +40,7 @@ with plain `git`.
 | --- | --- |
 | `gitpriv init --store <path>` | write the config with the store path (the store must be a git work tree). Existing `include`/`skip`/`max_file_bytes` are kept; defaults are never written into the file. |
 | `gitpriv scan [repo...]` | list files that would be synced, files skipped (with reason), and how many other ignored entries were ignored as non-private. Works without a config. |
+| `gitpriv classify [--json] PATH` | list the rebuildable junk and the private files under PATH, inside a repository or not (see "Junk and private, for other tools"). Works without a config. |
 | `gitpriv status [repo...]` | classify each private file: `in-sync`, `local-only` (push would add), `store-only` (pull would restore, or would refuse), `differs` (says which side is newer), `skipped` (with reason). |
 | `gitpriv push [-n] [--force] [repo...]` | copy added/changed private files into the store and commit only that repo's store directory. Refuses (`conflict`) to overwrite a store copy whose last commit is newer than the local file unless `--force`. |
 | `gitpriv pull [-n] [repo...]` | restore store files that are missing locally. |
@@ -68,21 +69,97 @@ Default include patterns (private state):
 **/*.sqlite  **/*.sqlite3  **/*.db
 ```
 
-Default skip patterns (junk, never synced even if included):
+Default skip patterns (junk, never synced even if included). These are
+rebuildable wherever they are:
 
 ```
 **/.git/**  **/node_modules/**  **/.venv*/**  **/venv/**  **/__pycache__/**
 **/.pytest_cache/**  **/.mypy_cache/**  **/.ruff_cache/**  **/.next/**
-**/out/**  **/dist/**  **/build/**  **/target/**  **/.turbo/**  **/.cache/**
-**/coverage/**  **/Pods/**  **/android/.gradle/**  **/*.tsbuildinfo
-**/.DS_Store  **/*.log
+**/.turbo/**  **/.cache/**  **/.dart_tool/**  **/.gradle/**  **/.expo/**
+**/DerivedData/**  **/*.noindex/**  **/*.tsbuildinfo  **/.DS_Store
 ```
+
+and these are junk only where git ignores them, since the name alone can be
+someone's real folder:
+
+```
+**/out/**  **/dist/**  **/build/**  **/target/**  **/coverage/**  **/Pods/**
+**/.svelte-kit/**  **/.astro/**  **/.nuxt/**  **/.parcel-cache/**
+**/.netlify/**  **/.terraform/**  **/*.log
+```
+
+A folder holding a `CACHEDIR.TAG` with the [cache directory
+standard](https://bford.info/cachedir/)'s signature (Cargo's `target`, many
+caches) or a `pyvenv.cfg` (a Python virtualenv, whatever it is called) is junk
+too.
 
 Pattern syntax: `*`, `?` and `[...]` match within one path segment, `**`
 matches any number of segments. Like `.gitignore`, a pattern without `/`
 matches at any depth (`*.pem` = `**/*.pem`), a trailing `/` means a directory
 and everything below it (`out/` = `**/out/**`), and a leading `/` anchors at the
 repo root (`/notes.md`).
+
+## The `.gitpriv` file
+
+A repository can say what is junk and what is private in a `.gitpriv` file at
+its root. Commit it: the rule travels with the repository, so every machine
+and every tool that asks gitpriv judges it the same way.
+
+```
+# rebuilt by `make fixtures`
+skip fixtures/
+# my own notes, kept out of git, synced through the store
+include NOTES.local.md
+```
+
+One rule per line, `skip PATTERN` or `include PATTERN` (the pattern syntax
+above, relative to the repository root); blank lines and `#` comments are
+ignored. Any other line is an error that names its line number: `gitpriv
+scan`/`status`/`push` stop on it, and `classify` reports it and judges the
+repository by the defaults alone. Like the config, the file adds to the
+defaults and never removes one; a skip still wins over an include.
+
+## Junk and private, for other tools
+
+`gitpriv classify --json PATH` answers, for one folder or file, what under it
+is rebuildable junk and what is private, so a tool that copies, backs up or
+hands over folders can leave the junk behind without keeping its own list.
+It prints one line of JSON:
+
+```json
+{
+  "schema_version": "gitpriv.classify.v1",
+  "path": "/home/me/work",
+  "repositories": ["app", "site"],
+  "junk": [
+    {"path": "app/node_modules", "dir": true, "rule": "**/node_modules/**", "source": "default"},
+    {"path": "qa/DerivedData", "dir": true, "rule": "**/DerivedData/**", "source": "default"},
+    {"path": "site/.venv-tools", "dir": true, "rule": "pyvenv.cfg", "source": "marker"},
+    {"path": "app/fixtures", "dir": true, "rule": "fixtures/", "source": ".gitpriv"}
+  ],
+  "private": [
+    {"path": "app/.env.local", "dir": false, "rule": "**/.env*", "source": "default"}
+  ],
+  "errors": []
+}
+```
+
+- Paths are relative to `path` (`"."` is the path itself), with `/`. A junk
+  folder is listed once, at its highest folder; nothing under it is listed.
+- `source` is `default`, `config`, `.gitpriv` or `marker` (then `rule` is the
+  marker file's name).
+- Inside a repository only what git does not track can be junk: a tracked
+  file never is. A git-ignored entry is judged by every skip pattern (the
+  defaults, the config, the repository's `.gitpriv`); an untracked entry git
+  does not ignore, and anything in no repository, only by the defaults that
+  are junk wherever they are and by the markers. Each repository found under
+  the path (a nested one too) is judged by its own rules.
+- Everything in neither list is unknown, and the caller keeps it. When git
+  cannot list a repository, or a folder cannot be read, that is in `errors`
+  and nothing in it is called junk.
+- Links are never followed and never listed.
+- The exit status is non-zero only when the path itself cannot be read; the
+  schema version changes only when a field changes meaning.
 
 ## Config
 
@@ -146,4 +223,3 @@ Forgejo, not on GitHub (not even as a private repository).
 
 - syncing deletions (files removed locally removed from the store)
 - encryption at rest (e.g. age)
-- per-repo include/skip overrides

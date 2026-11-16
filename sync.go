@@ -87,7 +87,11 @@ func cmdPush(args []string) error { return runRepos(args, true, pushRepo, "dry-r
 func cmdPull(args []string) error { return runRepos(args, true, pullRepo, "dry-run") }
 
 func scanRepo(cfg *Config, r Repo, _ Opts, w io.Writer) (int, error) {
-	res, err := collect(r.Root, cfg.Rules())
+	rules, err := cfg.RulesFor(r.Root)
+	if err != nil {
+		return 0, err
+	}
+	res, err := collect(r.Root, rules)
 	if err != nil {
 		return 0, err
 	}
@@ -115,7 +119,11 @@ func printErrs(w io.Writer, errs []error) {
 
 func pushRepo(cfg *Config, r Repo, o Opts, w io.Writer) (int, error) {
 	dry := o.DryRun
-	res, err := collect(r.Root, cfg.Rules())
+	rules, err := cfg.RulesFor(r.Root)
+	if err != nil {
+		return 0, err
+	}
+	res, err := collect(r.Root, rules)
 	if err != nil {
 		return 0, err
 	}

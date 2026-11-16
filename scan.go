@@ -179,7 +179,7 @@ func collect(repoDir string, rules Rules) (*ScanResult, error) {
 		if !ignoredDirs[e] {
 			continue // not ignored itself; its ignored files are listed separately
 		}
-		if dirSkipped(rel, rules.Skip) {
+		if dirSkipped(rel, rules.Skip) || junkMarker(full) != "" {
 			res.Other++
 			continue
 		}
@@ -198,7 +198,7 @@ func collect(repoDir string, rules Rules) (*ScanResult, error) {
 			}
 			r = filepath.ToSlash(r)
 			if d.IsDir() {
-				if p != full && dirSkipped(r, rules.Skip) {
+				if p != full && (dirSkipped(r, rules.Skip) || junkMarker(p) != "") {
 					res.Other++
 					return fs.SkipDir
 				}

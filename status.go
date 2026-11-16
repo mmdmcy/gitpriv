@@ -56,7 +56,10 @@ func statusRepo(cfg *Config, r Repo, _ Opts, w io.Writer) (int, error) {
 
 // repoStatus compares the local private files of r with its store copy.
 func repoStatus(cfg *Config, r Repo) ([]StatusEntry, bool, []error, error) {
-	rules := cfg.Rules()
+	rules, err := cfg.RulesFor(r.Root)
+	if err != nil {
+		return nil, false, nil, err
+	}
 	res, err := collect(r.Root, rules)
 	if err != nil {
 		return nil, false, nil, err

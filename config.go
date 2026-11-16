@@ -40,7 +40,9 @@ var defaultInclude = []string{
 	"**/*.db",
 }
 
-// defaultSkip is junk that is never synced, even when it matches an include.
+// defaultSkip is junk that is never synced, even when it matches an
+// include: rebuildable kinds whose names mean the same thing wherever they
+// are, so `gitpriv classify` calls them junk outside git's reach too.
 var defaultSkip = []string{
 	"**/.git/**",
 	"**/node_modules/**",
@@ -51,17 +53,32 @@ var defaultSkip = []string{
 	"**/.mypy_cache/**",
 	"**/.ruff_cache/**",
 	"**/.next/**",
+	"**/.turbo/**",
+	"**/.cache/**",
+	"**/.dart_tool/**",
+	"**/.gradle/**",
+	"**/.expo/**",
+	"**/DerivedData/**",
+	"**/*.noindex/**",
+	"**/*.tsbuildinfo",
+	"**/.DS_Store",
+}
+
+// defaultSkipIgnored is junk only where git ignores it: common names that
+// can also be someone's real folder (a "build" of photos, an "out" tray).
+var defaultSkipIgnored = []string{
 	"**/out/**",
 	"**/dist/**",
 	"**/build/**",
 	"**/target/**",
-	"**/.turbo/**",
-	"**/.cache/**",
 	"**/coverage/**",
 	"**/Pods/**",
-	"**/android/.gradle/**",
-	"**/*.tsbuildinfo",
-	"**/.DS_Store",
+	"**/.svelte-kit/**",
+	"**/.astro/**",
+	"**/.nuxt/**",
+	"**/.parcel-cache/**",
+	"**/.netlify/**",
+	"**/.terraform/**",
 	"**/*.log",
 }
 
@@ -77,13 +94,18 @@ type Rules struct {
 func (c *Config) Rules() Rules {
 	r := Rules{
 		Include:      append(append([]string{}, defaultInclude...), c.Include...),
-		Skip:         append(append([]string{}, defaultSkip...), c.Skip...),
+		Skip:         append(append(append([]string{}, defaultSkip...), defaultSkipIgnored...), c.Skip...),
 		MaxFileBytes: c.MaxFileBytes,
 	}
 	if r.MaxFileBytes <= 0 {
 		r.MaxFileBytes = defaultMaxFileBytes
 	}
 	return r
+}
+
+// RulesFor is Rules with the repository's own .gitpriv added.
+func (c *Config) RulesFor(root string) (Rules, error) {
+	return repoRules(root, c.Rules())
 }
 
 func configPath() string {

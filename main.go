@@ -13,6 +13,8 @@ func usage() {
 Usage:
   gitpriv init --store <path>          write ~/.config/gitpriv/config.json
   gitpriv scan   [repo...]             list what would be synced and what is skipped
+  gitpriv classify [--json] PATH       list the rebuildable junk and the private files
+                                       under PATH (in a repository or not)
   gitpriv status [repo...]             compare local private files with the store
   gitpriv push   [-n] [--force] [repo...]
                                        copy private files into the store and commit
@@ -40,6 +42,8 @@ func main() {
 	switch cmd {
 	case "init":
 		err = cmdInit(args)
+	case "classify":
+		err = cmdClassify(args)
 	case "scan":
 		err = cmdScan(args)
 	case "status", "st":
